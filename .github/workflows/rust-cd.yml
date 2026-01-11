@@ -176,6 +176,8 @@ jobs:
           /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o spdx-json     > sbom/sbom-spdx.json     || true
           echo "Generated SBOMs:"
           ls -la sbom || true
+          cat sbom/sbom-cyclonedx.json
+          cat sbom/sbom-spdx.json
 
       - name: Validate CycloneDX SBOM root component matches package & version
         working-directory: rust/digipin
