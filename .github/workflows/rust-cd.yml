@@ -37,6 +37,8 @@ jobs:
     environment: production
     env:
       TEST_MODE: ${{ vars.TEST_MODE }}
+      SYFT_VERSION: ${{ vars.SYFT_VERSION }}
+      SYFT_SHA256: ${{ vars.SYFT_SHA256 }}
     defaults:
       run:
         shell: bash
@@ -100,7 +102,9 @@ jobs:
           rustup toolchain install stable --profile minimal || true
           rustup default stable
           rustc --version
-          cargo --version
+          cargo --version   env:
+          SYFT_VERSION: ${{ env.SYFT_VERSION }}
+          SYFT_SHA256: ${{ env.SYFT_SHA256 }}
 
       - name: Cache cargo registry & build (keyed by crate Cargo.lock)
         uses: actions/cache@v4
@@ -144,13 +148,10 @@ jobs:
 
       - name: Install pinned Syft and verify checksum
         id: install_syft
-        env:
-          SYFT_VERSION: ${{ env.SYFT_VERSION }}
-          SYFT_SHA256: ${{ env.SYFT_SHA256 }}
         run: |
           set -euo pipefail
           if [ -z "${SYFT_VERSION:-}" ] || [ -z "${SYFT_SHA256:-}" ]; then
-            echo "SYFT_VERSION and SYFT_SHA256 must be set in repository secrets"
+            echo "SYFT_VERSION and SYFT_SHA256 must be set in production environment as environment variables"
             exit 1
           fi
           ARCH=$(uname -m)
