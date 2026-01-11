@@ -167,6 +167,7 @@ jobs:
           /usr/local/bin/syft --version
 
       - name: Generate dual SBOMs (CycloneDX + SPDX) for the .crate
+        working-directory: rust/digipin
         run: |
           set -euo pipefail
           mkdir -p sbom
