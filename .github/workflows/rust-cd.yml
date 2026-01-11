@@ -185,7 +185,7 @@ jobs:
             echo "Missing CycloneDX SBOM: sbom/sbom-cyclonedx.json"
             exit 1
           fi
-          PKG_NAME=$(sed -n 's/^name *= *"\(.*\)".*/\1/p' rust/digipin/Cargo.toml | head -n1)
+          PKG_NAME=$(sed -n 's/^name *= *"\(.*\)".*/\1/p' Cargo.toml | head -n1)
           PKG_VER="${CRATE_VERSION}"
           ACTUAL_NAME=$(jq -r '.metadata.component.name // empty' sbom/sbom-cyclonedx.json)
           ACTUAL_VER=$(jq -r '.metadata.component.version // empty' sbom/sbom-cyclonedx.json)
@@ -212,7 +212,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: rust/digipinartifacts/${{ env.CRATE_FILE }}
+          asset_path: rust/digipin/artifacts/${{ env.CRATE_FILE }}
           asset_name: ${{ env.GIT_OWNER }}-rust-${{ env.CRATE_FILE }}
           asset_content_type: application/octet-stream
         env:
