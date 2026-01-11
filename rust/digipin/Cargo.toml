@@ -10,3 +10,7 @@ documentation = "https://docs.rs/digipin-rs"
 categories = ["encoding", "science::geo"]
 
 [dependencies]
+
+[lib]
+name = "digipin"
+path = "src/lib.rs"

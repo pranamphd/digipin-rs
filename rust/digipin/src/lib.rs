@@ -25,7 +25,7 @@
 /// To use this library, include it as a dependency in your Rust project and call the
 /// `encode` and `decode` functions as needed.
 /// ```rust
-/// use digipin_rs::{encode, decode, Location};
+/// use digipin::{encode, decode, Location};
 /// let location = Location { latitude: 12.3456, longitude: 78.9012 };
 /// let digipin = encode(location).unwrap();
 /// let decoded_location = decode(&digipin).unwrap();
