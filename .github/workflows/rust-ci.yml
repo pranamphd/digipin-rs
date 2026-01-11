@@ -54,7 +54,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin
             rust/digipin/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/digipin/**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/digipin/**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
