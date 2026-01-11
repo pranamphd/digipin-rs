@@ -154,7 +154,7 @@ jobs:
           fi
           ARCH=$(uname -m)
           if [ "$ARCH" = "x86_64" ]; then TARCH="linux_amd64"; else TARCH="$ARCH"; fi
-          SYFT_TGZ_URL="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${TARCH}.tar.gz"
+          SYFT_TGZ_URL="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_${TARCH}.tar.gz"
           echo "Downloading Syft from $SYFT_TGZ_URL"
           curl -fsSL --retry 3 "$SYFT_TGZ_URL" -o /tmp/syft.tar.gz
           DOWN_SHA=$(sha256sum /tmp/syft.tar.gz | awk '{print $1}')
