@@ -1,0 +1,304 @@
+# Publish / CD for rust/digipin (library)
+# - Keyless cosign via OIDC (id-token: write)
+# - Verified GitHub actions only (actions/*, github/*, sigstore/cosign-action); Syft pinned/verified
+# - Produces dual SBOMs (CycloneDX + SPDX), validates SBOM, creates GitHub SLSA attestation,
+#   cosign attestation/sign (keyless via sigstore action), uploads release assets, then publishes to crates.io
+#
+# Required repository secrets / variables (set these before using the workflow):
+# - CARGO_REGISTRY_TOKEN     : (store as an Environment secret in 'production') crates.io API token
+# - SYFT_VERSION             : pinned Syft version (e.g. "0.71.0")
+# - SYFT_SHA256              : sha256 of the syft tarball you will download
+# - COSIGN_EXPERIMENTAL: set to 1 in env when invoking cosign action if needed
+# - TEST_MODE                : set "true" for test/draft-only
+name: CD — rust/digipin (library)
+
+on:
+  push:
+    tags:
+      - "v*"
+    paths:
+      - "rust/digipin/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: publish-rust-digipin-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish rust/digipin
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      TEST_MODE: ${{ vars.TEST_MODE }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout only rust/digipin and workspace files
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          sparse-checkout: |
+            rust/digipin
+            Cargo.toml
+            Cargo.lock
+            .cargo
+
+      - name: Inspect checkout (debug)
+        run: |
+          echo "GITHUB_REF=${GITHUB_REF}"
+          echo "GITHUB_REF_NAME=${GITHUB_REF_NAME:-${GITHUB_REF##*/}}"
+          echo "GITHUB_SHA=${GITHUB_SHA}"
+          ls -la
+          ls -la rust/digipin || true
+
+      - name: Set derived variables
+        id: set_vars
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME:-${GITHUB_REF##*/}}"
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-8)
+          RUN_ID="${GITHUB_RUN_NUMBER:-0}"
+          echo "TAG=${TAG}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_ENV
+          echo "RUN_ID=${RUN_ID}" >> $GITHUB_ENV
+          echo "GIT_OWNER=${GITHUB_REPOSITORY_OWNER}" >> $GITHUB_ENV
+
+      - name: Validate tag matches Cargo.toml version
+        id: check_tag_version
+        working-directory: rust/digipin
+        run: |
+          set -euo pipefail
+          TAG="${TAG:-${GITHUB_REF_NAME:-${GITHUB_REF##*/}}}"
+          TAG_NORMAL="${TAG#refs/tags/}"
+          CRATE_VERSION=$(sed -n 's/^version *= *"\(.*\)".*/\1/p' Cargo.toml | head -n1 || true)
+          if [ -z "$CRATE_VERSION" ]; then
+            echo "ERROR: Could not find version in rust/digipin/Cargo.toml"
+            exit 1
+          fi
+          if [ "v${CRATE_VERSION}" != "$TAG_NORMAL" ] && [ "${CRATE_VERSION}" != "$TAG_NORMAL" ]; then
+            echo "ERROR: Tag ($TAG_NORMAL) does not match Cargo.toml version ($CRATE_VERSION)"
+            exit 2
+          fi
+          echo "Tag matches Cargo.toml version: $CRATE_VERSION"
+          echo "CRATE_VERSION=${CRATE_VERSION}" >> $GITHUB_ENV
+
+      - name: Install Rust toolchain (pin if desired)
+        run: |
+          set -euo pipefail
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl https://sh.rustup.rs -sSf | sh -s -- -y
+            source "$HOME/.cargo/env"
+          fi
+          rustup toolchain install stable --profile minimal || true
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo registry & build (keyed by crate Cargo.lock)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/digipin/target
+          key: ${{ runner.os }}-rust-digipin-${{ hashFiles('rust/digipin/**/Cargo.lock') }}-cargo-target
+          restore-keys: |
+            ${{ runner.os }}-rust-digipin-
+
+      - name: Produce .crate (cargo package)
+        working-directory: rust/digipin
+        run: |
+          set -euo pipefail
+          echo "Packaging crate (Cargo.toml version ${CRATE_VERSION})..."
+          cargo package --allow-dirty
+          mkdir -p ../artifacts
+          CRATE_PATH=$(ls target/package/*.crate | head -n1)
+          if [ -z "$CRATE_PATH" ]; then
+            echo "ERROR: cargo package did not produce a .crate file"
+            exit 1
+          fi
+          echo "CRATE_PATH=${CRATE_PATH}" >> $GITHUB_ENV
+          CRATE_FILE=$(basename "$CRATE_PATH")
+          echo "CRATE_FILE=${CRATE_FILE}" >> $GITHUB_ENV
+          cp "$CRATE_PATH" ../artifacts/
+          echo "Copied crate to artifacts/"
+
+      - name: Create deterministic checksum for artifact
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          CRATE_FILE="${CRATE_FILE}"
+          sha256sum "artifacts/${CRATE_FILE}" | awk '{print $1 "  " $2}' > "artifacts/${CRATE_FILE}.sha256"
+          echo "Checksum written to artifacts/${CRATE_FILE}.sha256"
+
+      - name: Install pinned Syft and verify checksum
+        id: install_syft
+        env:
+          SYFT_VERSION: ${{ secrets.SYFT_VERSION }}
+          SYFT_SHA256: ${{ secrets.SYFT_SHA256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SYFT_VERSION:-}" ] || [ -z "${SYFT_SHA256:-}" ]; then
+            echo "SYFT_VERSION and SYFT_SHA256 must be set in repository secrets"
+            exit 1
+          fi
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "x86_64" ]; then TARCH="linux_amd64"; else TARCH="$ARCH"; fi
+          SYFT_TGZ_URL="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_${TARCH}.tar.gz"
+          echo "Downloading Syft from $SYFT_TGZ_URL"
+          curl -fsSL --retry 3 "$SYFT_TGZ_URL" -o /tmp/syft.tar.gz
+          DOWN_SHA=$(sha256sum /tmp/syft.tar.gz | awk '{print $1}')
+          if [ "$DOWN_SHA" != "$SYFT_SHA256" ]; then
+            echo "Syft checksum mismatch. expected=${SYFT_SHA256}, got=${DOWN_SHA}"
+            exit 2
+          fi
+          sudo mkdir -p /usr/local/bin
+          sudo tar -xzf /tmp/syft.tar.gz -C /usr/local/bin
+          /usr/local/bin/syft --version
+
+      - name: Generate dual SBOMs (CycloneDX + SPDX) for the .crate
+        run: |
+          set -euo pipefail
+          mkdir -p sbom
+          CRATE_FILE="${CRATE_FILE}"
+          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o cyclonedx-json > sbom/sbom-cyclonedx.json || true
+          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o spdx-json     > sbom/sbom-spdx.json     || true
+          echo "Generated SBOMs:"
+          ls -la sbom || true
+
+      - name: Validate CycloneDX SBOM root component matches package & version
+        run: |
+          set -euo pipefail
+          if [ ! -f sbom/sbom-cyclonedx.json ]; then
+            echo "Missing CycloneDX SBOM: sbom/sbom-cyclonedx.json"
+            exit 1
+          fi
+          PKG_NAME=$(sed -n 's/^name *= *"\(.*\)".*/\1/p' rust/digipin/Cargo.toml | head -n1)
+          PKG_VER="${CRATE_VERSION}"
+          ACTUAL_NAME=$(jq -r '.metadata.component.name // empty' sbom/sbom-cyclonedx.json)
+          ACTUAL_VER=$(jq -r '.metadata.component.version // empty' sbom/sbom-cyclonedx.json)
+          echo "SBOM reports: ${ACTUAL_NAME}:${ACTUAL_VER}"
+          if [ "$ACTUAL_NAME" != "$PKG_NAME" ] || [ "$ACTUAL_VER" != "$PKG_VER" ]; then
+            echo "ERROR: SBOM component mismatch (expected ${PKG_NAME}:${PKG_VER})"
+            exit 2
+          fi
+          echo "SBOM validation OK"
+
+      - name: Create SLSA provenance attestation (GitHub) using CycloneDX predicate
+        uses: github/attest-build-provenance@v3
+        with:
+          subject-path: "artifacts/${{ env.CRATE_FILE }}"
+          predicate-file: "sbom/sbom-cyclonedx.json"
+
+      - name: Cosign attest (keyless via sigstore action)
+        uses: sigstore/cosign-action@v2
+        with:
+          args: attest --predicate sbom/sbom-cyclonedx.json --type cyclonedx "artifacts/${{ env.CRATE_FILE }}"
+        env:
+          COSIGN_EXPERIMENTAL: 1
+
+      - name: Cosign sign (keyless via sigstore action)
+        uses: sigstore/cosign-action@v2
+        with:
+          args: sign "artifacts/${{ env.CRATE_FILE }}"
+        env:
+          COSIGN_EXPERIMENTAL: 1
+
+      - name: Create GitHub Release (DRAFT)
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ env.TAG }}
+          release_name: ${{ env.TAG }}
+          body: "Automated release for ${{ env.TAG }} — rust/digipin"
+          draft: true # created as draft; will be published later when TEST_MODE != 'true'
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release asset (.crate)
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/${{ env.CRATE_FILE }}
+          asset_name: ${{ env.GIT_OWNER }}-rust-${{ env.CRATE_FILE }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SBOM (CycloneDX)
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: sbom/sbom-cyclonedx.json
+          asset_name: sbom-cyclonedx.json
+          asset_content_type: application/json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SBOM (SPDX)
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: sbom/sbom-spdx.json
+          asset_name: sbom-spdx.json
+          asset_content_type: application/json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload checksum file
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/${{ env.CRATE_FILE }}.sha256
+          asset_name: ${{ env.CRATE_FILE }}.sha256
+          asset_content_type: text/plain
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish draft release (make public)
+        if: ${{ env.TEST_MODE != 'true' }}
+        run: |
+          set -euo pipefail
+          RELEASE_ID=${{ steps.create_release.outputs.id }}
+          echo "Publishing release id=${RELEASE_ID}"
+          curl -sS -X PATCH "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"draft": false, "prerelease": false}'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish crate to crates.io
+        if: ${{ env.TEST_MODE != 'true' }}
+        working-directory: rust/digipin
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "CARGO_REGISTRY_TOKEN not set; skipping publish"
+            exit 1
+          fi
+          cargo publish --token "$CARGO_REGISTRY_TOKEN"
+          echo "cargo publish completed"
+
+      - name: Finalize — print verification instructions
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "Release completed for tag ${TAG}, artifact artifacts/${CRATE_FILE}"
+          echo "TEST_MODE=${TEST_MODE}"
+          echo "If TEST_MODE=true the release was created as a DRAFT and crates.io publish was skipped."
+          echo "Verification commands (local):"
+          echo "  sha256sum ${CRATE_FILE} && cat ${CRATE_FILE}.sha256"
+          echo "  cosign verify --keyless ${CRATE_FILE}"
+          echo "  cosign verify-attestation --type cyclonedx --attestation <attestation.json> ${CRATE_FILE}  # if you saved attestation locally"
