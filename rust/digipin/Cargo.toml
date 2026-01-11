@@ -6,5 +6,7 @@ license = "Apache-2.0"
 description = "Rust library for encoding and decoding DIGIPIN (Digital Postal Index Number)"
 keywords = ["digipin", "postal", "gis", "address", "india"]
 repository = "https://github.com/pranamphd/digipin"
+documentation = "https://docs.rs/digipin-rs"
+categories = ["encoding", "science::geo"]
 
 [dependencies]
