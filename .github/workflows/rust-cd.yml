@@ -178,6 +178,7 @@ jobs:
           ls -la sbom || true
 
       - name: Validate CycloneDX SBOM root component matches package & version
+        working-directory: rust/digipin
         run: |
           set -euo pipefail
           if [ ! -f sbom/sbom-cyclonedx.json ]; then
@@ -211,7 +212,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/${{ env.CRATE_FILE }}
+          asset_path: rust/digipinartifacts/${{ env.CRATE_FILE }}
           asset_name: ${{ env.GIT_OWNER }}-rust-${{ env.CRATE_FILE }}
           asset_content_type: application/octet-stream
         env:
@@ -221,8 +222,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: sbom/sbom-cyclonedx.json
-          asset_name: sbom-cyclonedx.json
+          asset_path: rust/digipin/sbom/sbom-cyclonedx.json
+          asset_name: rust/digipin/sbom-cyclonedx.json
           asset_content_type: application/json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -231,8 +232,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: sbom/sbom-spdx.json
-          asset_name: sbom-spdx.json
+          asset_path: rust/digipin/sbom/sbom-spdx.json
+          asset_name: rust/digipin/sbom-spdx.json
           asset_content_type: application/json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -241,7 +242,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/${{ env.CRATE_FILE }}.sha256
+          asset_path: rust/digipin/artifacts/${{ env.CRATE_FILE }}.sha256
           asset_name: ${{ env.CRATE_FILE }}.sha256
           asset_content_type: text/plain
         env:
@@ -275,6 +276,7 @@ jobs:
           echo "cargo publish completed"
 
       - name: Finalize — print verification instructions
+        working-directory: rust/digipin
         run: |
           set -euo pipefail
           echo "Release completed for tag ${TAG}, artifact artifacts/${CRATE_FILE}"
