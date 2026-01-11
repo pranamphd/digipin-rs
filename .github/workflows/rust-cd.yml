@@ -145,8 +145,8 @@ jobs:
       - name: Install pinned Syft and verify checksum
         id: install_syft
         env:
-          SYFT_VERSION: ${{ secrets.SYFT_VERSION }}
-          SYFT_SHA256: ${{ secrets.SYFT_SHA256 }}
+          SYFT_VERSION: ${{ env.SYFT_VERSION }}
+          SYFT_SHA256: ${{ env.SYFT_SHA256 }}
         run: |
           set -euo pipefail
           if [ -z "${SYFT_VERSION:-}" ] || [ -z "${SYFT_SHA256:-}" ]; then
