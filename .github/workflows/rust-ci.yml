@@ -25,7 +25,13 @@ jobs:
           fetch-depth: 1
           # sparse-checkout keeps the runner from downloading the whole repo
           sparse-checkout: |
-            rust/digipin/**
+            rust/digipin
+      - name: Show checked-out files
+        run: |
+          echo "Repo root:"
+          ls -la
+          echo "rust/digipin:"
+          ls -la rust/digipin
 
       - name: Cache cargo registry & build
         uses: actions/cache@v4
