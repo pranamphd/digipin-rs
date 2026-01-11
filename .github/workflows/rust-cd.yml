@@ -102,9 +102,7 @@ jobs:
           rustup toolchain install stable --profile minimal || true
           rustup default stable
           rustc --version
-          cargo --version   env:
-          SYFT_VERSION: ${{ env.SYFT_VERSION }}
-          SYFT_SHA256: ${{ env.SYFT_SHA256 }}
+          cargo --version
 
       - name: Cache cargo registry & build (keyed by crate Cargo.lock)
         uses: actions/cache@v4
