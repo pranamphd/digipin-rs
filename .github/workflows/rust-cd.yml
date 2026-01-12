@@ -174,31 +174,14 @@ jobs:
           set -euo pipefail
           mkdir -p sbom
           CRATE_FILE="${CRATE_FILE}"
-          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o cyclonedx-json > sbom/sbom-cyclonedx.json || true
-          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o spdx-json     > sbom/sbom-spdx.json     || true
+          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o cyclonedx-json > sbom/sbom-cyclonedx.json
+          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o spdx-json     > sbom/sbom-spdx.json
           echo "Generated SBOMs:"
           ls -la sbom || true
           cat sbom/sbom-cyclonedx.json
           cat sbom/sbom-spdx.json
-
-      # - name: Validate CycloneDX SBOM root component matches package & version
-      #   working-directory: rust/digipin
-      #   run: |
-      #     set -euo pipefail
-      #     if [ ! -f sbom/sbom-cyclonedx.json ]; then
-      #       echo "Missing CycloneDX SBOM: sbom/sbom-cyclonedx.json"
-      #       exit 1
-      #     fi
-      #     PKG_NAME=$(sed -n 's/^name *= *"\(.*\)".*/\1/p' Cargo.toml | head -n1)
-      #     PKG_VER="${CRATE_VERSION}"
-      #     ACTUAL_NAME=$(jq -r '.metadata.component.name // empty' sbom/sbom-cyclonedx.json)
-      #     ACTUAL_VER=$(jq -r '.metadata.component.version // empty' sbom/sbom-cyclonedx.json)
-      #     echo "SBOM reports: ${ACTUAL_NAME}:${ACTUAL_VER}"
-      #     if [ "$ACTUAL_NAME" != "$PKG_NAME" ] || [ "$ACTUAL_VER" != "$PKG_VER" ]; then
-      #       echo "ERROR: SBOM component mismatch (expected ${PKG_NAME}:${PKG_VER})"
-      #       exit 2
-      #     fi
-      #     echo "SBOM validation OK"
+          test -s sbom/sbom-cyclonedx.json
+          test -s sbom/sbom-spdx.json
 
       - name: Create GitHub Release (DRAFT)
         id: create_release
