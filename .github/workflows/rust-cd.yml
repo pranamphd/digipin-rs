@@ -174,12 +174,14 @@ jobs:
           set -euo pipefail
           mkdir -p sbom
           CRATE_FILE="${CRATE_FILE}"
-          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o cyclonedx-json > sbom/sbom-cyclonedx.json || true
-          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o spdx-json     > sbom/sbom-spdx.json     || true
+          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o cyclonedx-json > sbom/sbom-cyclonedx.json
+          /usr/local/bin/syft "artifacts/${CRATE_FILE}" -o spdx-json     > sbom/sbom-spdx.json
           echo "Generated SBOMs:"
           ls -la sbom || true
           cat sbom/sbom-cyclonedx.json
           cat sbom/sbom-spdx.json
+          test -s sbom/sbom-cyclonedx.json
+          test -s sbom/sbom-spdx.json
 
       # - name: Validate CycloneDX SBOM root component matches package & version
       #   working-directory: rust/digipin
