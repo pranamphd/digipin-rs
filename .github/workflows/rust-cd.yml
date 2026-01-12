@@ -183,6 +183,18 @@ jobs:
           test -s sbom/sbom-cyclonedx.json
           test -s sbom/sbom-spdx.json
 
+      - name: Attest provenance for crate
+        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
+        with:
+          subject-path: rust/digipin/artifacts/${{ env.CRATE_FILE }}
+
+      - name: Attest provenance for SBOMs
+        uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
+        with:
+          subject-path: |
+            rust/digipin/sbom/sbom-cyclonedx.json
+            rust/digipin/sbom/sbom-spdx.json
+
       - name: Create GitHub Release (DRAFT)
         id: create_release
         uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e # v1.1.4
@@ -271,5 +283,7 @@ jobs:
           echo "If TEST_MODE=true the release was created as a DRAFT and crates.io publish was skipped."
           echo "Verification commands (local):"
           echo "  sha256sum ${CRATE_FILE} && cat ${CRATE_FILE}.sha256"
-          echo "  cosign verify --keyless ${CRATE_FILE}"
-          echo "  cosign verify-attestation --type cyclonedx --attestation <attestation.json> ${CRATE_FILE}  # if you saved attestation locally"
+          echo "Verify provenance (SLSA L3):"
+          echo "  slsa-verifier verify-artifact ${CRATE_FILE} \\"
+          echo "    --source-uri github.com/${GITHUB_REPOSITORY} \\"
+          echo "    --source-tag ${TAG}"
