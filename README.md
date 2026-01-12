@@ -4,6 +4,8 @@ DIGIPIN (Digital Postal Index Number) is a national-level, geo-coded addressing 
 
 This repository contains **multi-language reference implementations of the DIGIPIN algorithm**, intended to enable consistent and correct adoption across platforms, applications, and systems.
 
+
+![DIGIPIN Logo](/digipin-social-preview.png)
 ---
 
 ## What this repository provides
@@ -56,6 +58,7 @@ This repository is under active development.
 The library interfaces (function and type signatures) may evolve until the first stable release (`v1.0.0`).
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11730/badge)](https://www.bestpractices.dev/projects/11730)
+[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
 
 ---
 
