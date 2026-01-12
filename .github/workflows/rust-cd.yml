@@ -20,6 +20,9 @@ on:
       - "rust/digipin/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: publish-rust-digipin-${{ github.ref }}
   cancel-in-progress: false
