@@ -58,12 +58,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Set up Rust (stable) with clippy & rustfmt
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-          profile: minimal
+      - name: Install Rust toolchain (pin if desired)
+        run: |
+          set -euo pipefail
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl https://sh.rustup.rs -sSf | sh -s -- -y
+            source "$HOME/.cargo/env"
+          fi
+          rustup toolchain install stable --profile default || true
+          rustup default stable
+          rustc --version
+          cargo --version
 
       - name: fmt check
         working-directory: rust/digipin
