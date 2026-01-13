@@ -1,4 +1,4 @@
-# Publish / CD for rust/digipin (library)
+# Publish / CD for digipin-rs (library)
 # - Keyless cosign via OIDC (id-token: write)
 # - Verified GitHub actions only (actions/*, github/*, sigstore/cosign-action); Syft pinned/verified
 # - Produces dual SBOMs (CycloneDX + SPDX), validates SBOM, creates GitHub SLSA attestation,
@@ -8,28 +8,25 @@
 # - CARGO_REGISTRY_TOKEN     : (store as an Environment secret in 'production') crates.io API token
 # - SYFT_VERSION             : pinned Syft version (e.g. "0.71.0")
 # - SYFT_SHA256              : sha256 of the syft tarball you will download
-# - COSIGN_EXPERIMENTAL: set to 1 in env when invoking cosign action if needed
 # - TEST_MODE                : set "true" for test/draft-only
-name: CD — rust/digipin
+name: CD — digipin-rs
 
 on:
   push:
     tags:
       - "v*"
-    paths:
-      - "rust/digipin/**"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-rust-digipin-${{ github.ref }}
+  group: publish-digipin-rs-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    name: Publish rust/digipin
+    name: Publish digipin-rs crate
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -45,15 +42,10 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Checkout only rust/digipin and workspace files
+      - name: Checkout digipin-rs
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
-          sparse-checkout: |
-            rust/digipin
-            Cargo.toml
-            Cargo.lock
-            .cargo
 
       - name: Inspect checkout (debug)
         run: |
@@ -61,7 +53,6 @@ jobs:
           echo "GITHUB_REF_NAME=${GITHUB_REF_NAME:-${GITHUB_REF##*/}}"
           echo "GITHUB_SHA=${GITHUB_SHA}"
           ls -la
-          ls -la rust/digipin || true
 
       - name: Set derived variables
         id: set_vars
@@ -77,14 +68,13 @@ jobs:
 
       - name: Validate tag matches Cargo.toml version
         id: check_tag_version
-        working-directory: rust/digipin
         run: |
           set -euo pipefail
           TAG="${TAG:-${GITHUB_REF_NAME:-${GITHUB_REF##*/}}}"
           TAG_NORMAL="${TAG#refs/tags/}"
           CRATE_VERSION=$(sed -n 's/^version *= *"\(.*\)".*/\1/p' Cargo.toml | head -n1 || true)
           if [ -z "$CRATE_VERSION" ]; then
-            echo "ERROR: Could not find version in rust/digipin/Cargo.toml"
+            echo "ERROR: Could not find version in Cargo.toml"
             exit 1
           fi
           if [ "v${CRATE_VERSION}" != "$TAG_NORMAL" ] && [ "${CRATE_VERSION}" != "$TAG_NORMAL" ]; then
@@ -94,7 +84,7 @@ jobs:
           echo "Tag matches Cargo.toml version: $CRATE_VERSION"
           echo "CRATE_VERSION=${CRATE_VERSION}" >> $GITHUB_ENV
 
-      - name: Install Rust toolchain (pin if desired)
+      - name: Install Rust toolchain
         run: |
           set -euo pipefail
           if ! command -v rustup >/dev/null 2>&1; then
@@ -106,23 +96,22 @@ jobs:
           rustc --version
           cargo --version
 
-      - name: Cache cargo registry & build (keyed by crate Cargo.lock)
+      - name: Cache cargo registry & build
         uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/digipin/target
-          key: ${{ runner.os }}-rust-digipin-${{ hashFiles('rust/digipin/**/Cargo.lock') }}-cargo-target
+            target
+          key: ${{ runner.os }}-rust-digipin-${{ hashFiles('Cargo.lock') }}-cargo-target
           restore-keys: |
             ${{ runner.os }}-rust-digipin-
 
       - name: Produce .crate (cargo package)
-        working-directory: rust/digipin
         run: |
           set -euo pipefail
           echo "Packaging crate (Cargo.toml version ${CRATE_VERSION})..."
-          cargo package --allow-dirty
+          cargo package
           mkdir -p artifacts
           CRATE_PATH=$(ls target/package/*.crate | head -n1)
           if [ -z "$CRATE_PATH" ]; then
@@ -138,7 +127,6 @@ jobs:
           ls -la artifacts
 
       - name: Create deterministic checksum for artifact
-        working-directory: rust/digipin
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -169,7 +157,6 @@ jobs:
           /usr/local/bin/syft --version
 
       - name: Generate dual SBOMs (CycloneDX + SPDX) for the .crate
-        working-directory: rust/digipin
         run: |
           set -euo pipefail
           mkdir -p sbom
@@ -186,22 +173,24 @@ jobs:
       - name: Attest provenance for crate
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
         with:
-          subject-path: rust/digipin/artifacts/${{ env.CRATE_FILE }}
+          subject-path: |
+            artifacts/${{ env.CRATE_FILE }}
+            artifacts/${{ env.CRATE_FILE }}.sha256
 
       - name: Attest provenance for SBOMs
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
         with:
           subject-path: |
-            rust/digipin/sbom/sbom-cyclonedx.json
-            rust/digipin/sbom/sbom-spdx.json
+            sbom/sbom-cyclonedx.json
+            sbom/sbom-spdx.json
 
-      - name: Create GitHub Release (DRAFT)
+      - name: Create GitHub Draft Release
         id: create_release
         uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e # v1.1.4
         with:
           tag_name: ${{ env.TAG }}
           release_name: ${{ env.TAG }}
-          body: "Automated release for ${{ env.TAG }} — rust/digipin"
+          body: "Automated release for ${{ env.TAG }} — digipin-rs"
           draft: true # created as draft; will be published later when TEST_MODE != 'true'
           prerelease: false
         env:
@@ -211,7 +200,7 @@ jobs:
         uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: rust/digipin/artifacts/${{ env.CRATE_FILE }}
+          asset_path: artifacts/${{ env.CRATE_FILE }}
           asset_name: ${{ env.GIT_OWNER }}-rust-${{ env.CRATE_FILE }}
           asset_content_type: application/octet-stream
         env:
@@ -221,8 +210,8 @@ jobs:
         uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: rust/digipin/sbom/sbom-cyclonedx.json
-          asset_name: rust/digipin/sbom-cyclonedx.json
+          asset_path: sbom/sbom-cyclonedx.json
+          asset_name: sbom-cyclonedx.json
           asset_content_type: application/json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -231,8 +220,8 @@ jobs:
         uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: rust/digipin/sbom/sbom-spdx.json
-          asset_name: rust/digipin/sbom-spdx.json
+          asset_path: sbom/sbom-spdx.json
+          asset_name: sbom-spdx.json
           asset_content_type: application/json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -241,13 +230,13 @@ jobs:
         uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: rust/digipin/artifacts/${{ env.CRATE_FILE }}.sha256
+          asset_path: artifacts/${{ env.CRATE_FILE }}.sha256
           asset_name: ${{ env.CRATE_FILE }}.sha256
           asset_content_type: text/plain
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish draft release (make public)
+      - name: Publish draft release on GitHub
         if: ${{ env.TEST_MODE != 'true' }}
         run: |
           set -euo pipefail
@@ -262,7 +251,6 @@ jobs:
 
       - name: Publish crate to crates.io
         if: ${{ env.TEST_MODE != 'true' }}
-        working-directory: rust/digipin
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -275,7 +263,6 @@ jobs:
           echo "cargo publish completed"
 
       - name: Finalize — print verification instructions
-        working-directory: rust/digipin
         run: |
           set -euo pipefail
           echo "Release completed for tag ${TAG}, artifact artifacts/${CRATE_FILE}"

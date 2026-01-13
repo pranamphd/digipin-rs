@@ -1,27 +1,27 @@
-# GitHub Actions workflow for CI of the rust/digipin library
+# GitHub Actions workflow for CI of the digipin-rs library
 # This workflow runs on pushes and pull requests to the main branch,
-# specifically when changes are made in the rust/digipin/ directory.
+# specifically when changes are made in the  directory.
 # It performs formatting checks, linting, testing, and security audits.
 # Workflow Dispatch is also enabled for manual runs.
 # Permissions are set to read-only for repository contents.
-# Workflow Name: CI — rust/digipin
+# Workflow Name: CI — digipin-rs
 # Required repository variable:
 # - None
-name: CI — rust/digipin
+name: CI — digipin-rs
 
 on:
   push:
     branches: [main]
     paths:
-      - "rust/digipin/**/*.rs"
-      - "rust/digipin/**/Cargo.toml"
-      - "rust/digipin/**/Cargo.lock"
+      - "**/*.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
   pull_request:
     branches: [main]
     paths:
-      - "rust/digipin/**/*.rs"
-      - "rust/digipin/**/Cargo.toml"
-      - "rust/digipin/**/Cargo.lock"
+      - "**/*.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
   workflow_dispatch:
 
 permissions:
@@ -32,19 +32,15 @@ jobs:
     name: Build & Test (stable)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout rust/digipin
+      - name: Checkout digipin-rs
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 1
-          # sparse-checkout keeps the runner from downloading the whole repo
-          sparse-checkout: |
-            rust/digipin
+
       - name: Show checked-out files
         run: |
           echo "Repo root:"
           ls -la
-          echo "rust/digipin:"
-          ls -la rust/digipin
 
       - name: Cache cargo registry & build
         uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
@@ -53,8 +49,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/bin
-            rust/digipin/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/digipin/**/Cargo.toml') }}
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -71,15 +67,12 @@ jobs:
           cargo --version
 
       - name: fmt check
-        working-directory: rust/digipin
         run: cargo fmt -- --check
 
       - name: clippy (deny warnings)
-        working-directory: rust/digipin
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        working-directory: rust/digipin
         run: cargo test --workspace --all-features --verbose
 
       - name: Install cargo-audit
@@ -88,7 +81,6 @@ jobs:
           cargo install --locked cargo-audit || true
 
       - name: Run cargo-audit
-        working-directory: rust/digipin
         run: |
           if command -v cargo-audit >/dev/null; then
             cargo audit || (echo "cargo-audit found issues" && exit 1)
@@ -101,7 +93,6 @@ jobs:
           cargo install cargo-deny || true
 
       - name: Run cargo-deny (policy check)
-        working-directory: rust/digipin
         run: |
           if command -v cargo-deny >/dev/null; then
             cargo deny check || (echo "cargo-deny found policy issues" && exit 1)
