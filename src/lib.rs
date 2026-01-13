@@ -31,15 +31,15 @@
 ///         latitude: 28.622788,
 ///         longitude: 77.213033,
 ///     };
-
+/// 
 ///     let digipin = encode(location)?;
 ///     let decoded = decode(&digipin)?;
-
+/// 
 ///     println!("DIGIPIN: {}", digipin);
 ///     println!("Decoded: {:?}", decoded);
 ///     Ok(())
 /// }
-//// ```
+/// ```
 mod constants;
 mod decode;
 mod encode;
