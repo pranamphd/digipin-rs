@@ -26,10 +26,20 @@
 /// `encode` and `decode` functions as needed.
 /// ```rust
 /// use digipin::{encode, decode, Location};
-/// let location = Location { latitude: 12.3456, longitude: 78.9012 };
-/// let digipin = encode(location).unwrap();
-/// let decoded_location = decode(&digipin).unwrap();
-/// ```
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let location = Location {
+///         latitude: 28.622788,
+///         longitude: 77.213033,
+///     };
+
+///     let digipin = encode(location)?;
+///     let decoded = decode(&digipin)?;
+
+///     println!("DIGIPIN: {}", digipin);
+///     println!("Decoded: {:?}", decoded);
+///     Ok(())
+/// }
+//// ```
 mod constants;
 mod decode;
 mod encode;
