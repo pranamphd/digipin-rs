@@ -245,15 +245,14 @@ jobs:
 
       - name: Verify SLSA provenance (self-check)
         if: env.TEST_MODE != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          curl --proto '=https' --tlsv1.2 -fsSL https://github.com/slsa-framework/slsa-verifier/releases/latest/download/slsa-verifier-linux-amd64 \
-            -o /usr/local/bin/slsa-verifier
-          chmod +x /usr/local/bin/slsa-verifier
-
-          slsa-verifier verify-artifact "artifacts/${CRATE_FILE}" \
-            --source-uri "github.com/${GITHUB_REPOSITORY}" \
-            --source-tag "${TAG}"
+          echo "Verifying SLSA provenance for ${CRATE_FILE}"
+          gh attestation verify "artifacts/${CRATE_FILE}" \
+            --repo "${GITHUB_REPOSITORY}"
+          echo "SLSA provenance verification passed"
 
       - name: Cleanup build artifacts before publish
         if: env.TEST_MODE != 'true'
