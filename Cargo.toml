@@ -15,8 +15,6 @@ exclude = [
     "target/**"
 ]
 
-[dependencies]
-
 [lib]
 name = "digipin"
 path = "src/lib.rs"
