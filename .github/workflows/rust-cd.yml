@@ -88,7 +88,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! command -v rustup >/dev/null 2>&1; then
-            curl https://sh.rustup.rs -sSf | sh -s -- -y
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             source "$HOME/.cargo/env"
           fi
           rustup toolchain install stable --profile minimal || true
@@ -106,19 +106,6 @@ jobs:
           key: ${{ runner.os }}-digipin-rs-cd-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-digipin-rs-cd-
-
-      - name: Publish crate to crates.io
-        if: ${{ env.TEST_MODE != 'true' }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
-            echo "CARGO_REGISTRY_TOKEN not set; skipping publish"
-            exit 1
-          fi
-          cargo publish --token "$CARGO_REGISTRY_TOKEN"
-          echo "cargo publish completed"
 
       - name: Produce .crate (cargo package)
         run: |
@@ -159,7 +146,7 @@ jobs:
           if [ "$ARCH" = "x86_64" ]; then TARCH="linux_amd64"; else TARCH="$ARCH"; fi
           SYFT_TGZ_URL="https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_${TARCH}.tar.gz"
           echo "Downloading Syft from $SYFT_TGZ_URL"
-          curl -fsSL --retry 3 "$SYFT_TGZ_URL" -o /tmp/syft.tar.gz
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 "$SYFT_TGZ_URL" -o /tmp/syft.tar.gz
           DOWN_SHA=$(sha256sum /tmp/syft.tar.gz | awk '{print $1}')
           if [ "$DOWN_SHA" != "$SYFT_SHA256" ]; then
             echo "Syft checksum mismatch. expected=${SYFT_SHA256}, got=${DOWN_SHA}"
@@ -197,70 +184,105 @@ jobs:
             sbom/sbom-cyclonedx.json
             sbom/sbom-spdx.json
 
-      - name: Create GitHub Draft Release
-        id: create_release
-        uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e # v1.1.4
-        with:
-          tag_name: ${{ env.TAG }}
-          release_name: ${{ env.TAG }}
-          body: "Automated release for ${{ env.TAG }} — digipin-rs"
-          draft: true # created as draft; will be published later when TEST_MODE != 'true'
-          prerelease: false
+      - name: Check if GitHub release already exists
+        id: check_release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release asset (.crate)
-        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/${{ env.CRATE_FILE }}
-          asset_name: ${{ env.GIT_OWNER }}-rust-${{ env.CRATE_FILE }}
-          asset_content_type: application/octet-stream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload SBOM (CycloneDX)
-        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: sbom/sbom-cyclonedx.json
-          asset_name: sbom-cyclonedx.json
-          asset_content_type: application/json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload SBOM (SPDX)
-        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: sbom/sbom-spdx.json
-          asset_name: sbom-spdx.json
-          asset_content_type: application/json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload checksum file
-        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/${{ env.CRATE_FILE }}.sha256
-          asset_name: ${{ env.CRATE_FILE }}.sha256
-          asset_content_type: text/plain
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish draft release on GitHub
-        if: ${{ env.TEST_MODE != 'true' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          RELEASE_ID=${{ steps.create_release.outputs.id }}
-          echo "Publishing release id=${RELEASE_ID}"
-          curl -sS -X PATCH "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -d '{"draft": false, "prerelease": false}'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "RELEASE_EXISTS=true" >> "$GITHUB_ENV"
+            IS_DRAFT=$(gh release view "$TAG" --json isDraft -q '.isDraft')
+            echo "RELEASE_IS_DRAFT=${IS_DRAFT}" >> "$GITHUB_ENV"
+            echo "Release exists (draft=${IS_DRAFT})"
+          else
+            echo "RELEASE_EXISTS=false" >> "$GITHUB_ENV"
+            echo "Release does not exist"
+          fi
+      - name: Abort if release already published
+        if: env.RELEASE_EXISTS == 'true' && env.RELEASE_IS_DRAFT != 'true'
+        run: |
+          echo "ERROR: Release $TAG already exists and is published."
+          echo "Refusing to modify an immutable release."
+          exit 1
+
+      - name: Create GitHub release
+        if: env.RELEASE_EXISTS != 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --draft \
+            --generate-notes \
+            --title "$TAG" \
+
+      - name: Upload release assets
+        if: env.TEST_MODE != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" \
+            artifacts/${CRATE_FILE} \
+            artifacts/${CRATE_FILE}.sha256 \
+            sbom/sbom-cyclonedx.json \
+            sbom/sbom-spdx.json \
+            --clobber
+
+      - name: Publish GitHub release
+        if: env.TEST_MODE != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${RELEASE_IS_DRAFT:-true}" = "true" ]; then
+            gh release edit "$TAG" --draft=false
+            echo "Release published"
+          else
+            echo "Release already published — skipping"
+          fi
+
+      - name: Verify SLSA provenance (self-check)
+        if: env.TEST_MODE != 'true'
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsSL https://github.com/slsa-framework/slsa-verifier/releases/latest/download/slsa-verifier-linux-amd64 \
+            -o /usr/local/bin/slsa-verifier
+          chmod +x /usr/local/bin/slsa-verifier
+
+          slsa-verifier verify-artifact "artifacts/${CRATE_FILE}" \
+            --source-uri "github.com/${GITHUB_REPOSITORY}" \
+            --source-tag "${TAG}"
+
+      - name: Cleanup build artifacts before publish
+        if: env.TEST_MODE != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf artifacts sbom
+
+      - name: Enforce clean git tree before publish
+        if: env.TEST_MODE != 'true'
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "ERROR: working tree is dirty before cargo publish"
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Publish crate to crates.io
+        if: env.TEST_MODE != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "CARGO_REGISTRY_TOKEN not set; skipping publish"
+            exit 1
+          fi
+          cargo publish
+          echo "cargo publish completed"
 
       - name: Finalize — print verification instructions
         run: |
