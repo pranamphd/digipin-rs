@@ -210,13 +210,14 @@ jobs:
         if: env.RELEASE_EXISTS != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          START_TAG: ${{ vars.START_TAG }}
         run: |
           set -euo pipefail
           gh release create "$TAG" \
             --draft \
             --generate-notes \
             --title "$TAG" \
-            --notes-start-tag "$START_TAG" \
+            ${START_TAG:+--notes-start-tag "$START_TAG"} \
 
       - name: Upload release assets
         if: env.TEST_MODE != 'true'
