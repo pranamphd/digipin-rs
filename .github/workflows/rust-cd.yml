@@ -216,6 +216,7 @@ jobs:
             --draft \
             --generate-notes \
             --title "$TAG" \
+            --notes-start-tag "$START_TAG" \
 
       - name: Upload release assets
         if: env.TEST_MODE != 'true'
