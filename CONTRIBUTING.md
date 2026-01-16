@@ -9,4 +9,4 @@ Thanks for wanting to contribute!
 - Write tests for new behavior.
 - Follow the language specific coding style and document public APIs.
 
-See also: CODE_OF_CONDUCT.md and SECURITY.md
+See also read [Code of Conduct](/CODE_OF_CONDUCT.md) and [Security](/SECURITY.md) documentation.
